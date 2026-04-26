@@ -1,7 +1,6 @@
 import requests
-import re
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 
 TG_WEB_URL = "https://t.me/s/{channel}"
@@ -14,12 +13,12 @@ IB_KEYWORDS = [
     # Пентест
     "пентест", "pentest", "penetration test", "тестирование на проникновение",
     "анализ защищённости", "анализ защищенности",
-    # ИБ — все падежи через стем или частые формы
-    "информационной безопасност",   # genitive/prepositional stem
-    "информационная безопасност",   # nominative stem
-    "информационную безопасност",   # accusative stem
-    "по информационной",            # common fragment
-    "кибербезопасност",             # stem → кибербезопасность/и/ью
+    # ИБ — стемы для покрытия всех падежей
+    "информационной безопасност",
+    "информационная безопасност",
+    "информационную безопасност",
+    "по информационной",
+    "кибербезопасност",
     "защита информации", "защите информации", "защиты информации",
     "аудит безопасности", "аудит информационной",
     " иб ", " иб,", " иб.", "(иб)", "иб-специалист", "иб-аналитик",
@@ -37,11 +36,11 @@ IB_KEYWORDS = [
     # Прочее ИБ
     "dfir", "bug bounty", "vulnerability", "cve",
     "специалист по безопасности", "специалиста по безопасности",
-    "специалисту по безопасности", "специалистов по безопасности",
+    "специалисту по безопасности",
     "инженер безопасности", "инженера безопасности",
     "инженер по безопасности",
     "ибшник", "ибшница",
-    "безопасност приложений",   # stem
+    "безопасност приложений",
     "безопасность приложений",
     "стажировка по безопасност",
     "стажёр по безопасност", "стажер по безопасност",
@@ -70,8 +69,7 @@ LEVEL_MAP = {
 def is_ib_relevant(text: str) -> bool:
     low = text.lower()
     if any(kw in low for kw in EXCLUDE_KEYWORDS):
-        has_ib = any(kw in low for kw in IB_KEYWORDS)
-        if not has_ib:
+        if not any(kw in low for kw in IB_KEYWORDS):
             return False
     return any(kw in low for kw in IB_KEYWORDS)
 
@@ -95,77 +93,129 @@ def extract_links(tag) -> list[str]:
     return links
 
 
-def parse_channel(channel: str, since: datetime) -> list[dict]:
-    url = TG_WEB_URL.format(channel=channel)
-    results = []
+def _get_msg_id(msg) -> int | None:
+    link = msg.find("a", class_="tgme_widget_message_date")
+    if link and link.get("href"):
+        parts = link["href"].rstrip("/").split("/")
+        try:
+            return int(parts[-1])
+        except ValueError:
+            return None
+    return None
 
+
+def _fetch_page(channel: str, before_id: int | None = None) -> BeautifulSoup | None:
+    url = TG_WEB_URL.format(channel=channel)
+    if before_id:
+        url += f"?before={before_id}"
     try:
         resp = requests.get(url, headers=HEADERS, timeout=20)
         resp.raise_for_status()
+        return BeautifulSoup(resp.text, "lxml")
     except Exception as e:
-        print(f"[tg] Не удалось получить {channel}: {e}")
-        return results
+        print(f"[tg] Ошибка загрузки @{channel} (before={before_id}): {e}")
+        return None
 
-    soup = BeautifulSoup(resp.text, "lxml")
-    messages = soup.find_all("div", class_="tgme_widget_message")
 
-    for msg in messages:
-        # Get datetime
-        time_tag = msg.find("time", datetime=True)
-        if not time_tag:
-            continue
+def _parse_msg(msg, channel: str) -> dict | None:
+    time_tag = msg.find("time", datetime=True)
+    if not time_tag:
+        return None
 
-        try:
-            dt_str = time_tag["datetime"]
-            post_dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-        except Exception:
-            continue
+    try:
+        post_dt = datetime.fromisoformat(time_tag["datetime"].replace("Z", "+00:00"))
+    except Exception:
+        return None
 
-        if post_dt < since:
-            continue
+    text_tag = msg.find("div", class_="tgme_widget_message_text")
+    if not text_tag:
+        return None
 
-        # Get text content
-        text_tag = msg.find("div", class_="tgme_widget_message_text")
-        if not text_tag:
-            continue
+    text = text_tag.get_text(separator="\n", strip=True)
+    if not text or len(text) < 30:
+        return None
 
-        text = text_tag.get_text(separator="\n", strip=True)
-        if not text or len(text) < 30:
-            continue
+    if not is_ib_relevant(text):
+        return None
 
-        if not is_ib_relevant(text):
-            continue
+    level = detect_level(text)
+    if level is None:
+        return None
 
-        level = detect_level(text)
-        if level is None:
-            continue  # skip senior+
+    post_url = ""
+    date_link = msg.find("a", class_="tgme_widget_message_date")
+    if date_link and date_link.get("href"):
+        post_url = date_link["href"]
 
-        # Get post URL
-        post_url = ""
-        date_link = msg.find("a", class_="tgme_widget_message_date")
-        if date_link and date_link.get("href"):
-            post_url = date_link["href"]
+    ext_links = extract_links(text_tag)
+    link_str = ext_links[0] if ext_links else post_url
 
-        # Extract external links from post
-        ext_links = extract_links(text_tag)
-        link_str = ext_links[0] if ext_links else post_url
+    first_line = text.split("\n")[0].strip()
+    title = first_line[:120] if first_line else text[:80]
 
-        # Try to extract vacancy title from first line
-        first_line = text.split("\n")[0].strip()
-        title = first_line[:120] if first_line else text[:80]
+    return {
+        "title": title,
+        "url": link_str,
+        "post_url": post_url,
+        "company": f"@{channel}",
+        "level": level,
+        "salary": "",
+        "schedule": "",
+        "location": "",
+        "source": f"TG @{channel}",
+        "text_preview": text[:300],
+        "posted_at": post_dt,
+    }
 
-        results.append({
-            "title": title,
-            "url": link_str,
-            "post_url": post_url,
-            "company": f"@{channel}",
-            "level": level,
-            "salary": "",
-            "schedule": "",
-            "location": "",
-            "source": f"TG @{channel}",
-            "text_preview": text[:300],
-        })
+
+def parse_channel(channel: str, since: datetime) -> list[dict]:
+    results = []
+    oldest_id: int | None = None
+    max_pages = 5
+
+    for page_num in range(max_pages):
+        soup = _fetch_page(channel, before_id=oldest_id)
+        if not soup:
+            break
+
+        messages = soup.find_all("div", class_="tgme_widget_message")
+        if not messages:
+            break
+
+        oldest_on_page: int | None = None
+        any_newer_than_since = False
+
+        for msg in messages:
+            # track oldest ID for next-page fetch
+            msg_id = _get_msg_id(msg)
+            if msg_id:
+                if oldest_on_page is None or msg_id < oldest_on_page:
+                    oldest_on_page = msg_id
+
+            # check post datetime
+            time_tag = msg.find("time", datetime=True)
+            if not time_tag:
+                continue
+            try:
+                post_dt = datetime.fromisoformat(time_tag["datetime"].replace("Z", "+00:00"))
+            except Exception:
+                continue
+
+            if post_dt >= since:
+                any_newer_than_since = True
+                parsed = _parse_msg(msg, channel)
+                if parsed:
+                    results.append(parsed)
+
+        # If oldest on this page is also newer than since, fetch more
+        if oldest_on_page:
+            oldest_id = oldest_on_page
+
+        if not any_newer_than_since:
+            break  # all posts on this page are older than window
+
+        if page_num < max_pages - 1:
+            time.sleep(1.0)
 
     return results
 
