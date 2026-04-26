@@ -11,15 +11,41 @@ HEADERS = {
 }
 
 IB_KEYWORDS = [
-    "пентест", "pentest", "penetration", "тестирование на проникновение",
-    "анализ защищённости", "анализ защищенности", "аудит безопасности",
-    "информационная безопасность", "кибербезопасность", "appsec",
-    "application security", "безопасность приложений", "soc аналитик",
-    "soc-аналитик", "red team", "redteam", "dfir", "threat hunting",
-    "threat intelligence", "специалист по безопасности", "инженер безопасности",
-    "bug bounty", "vulnerability", "ибшник", "ибшница", "ibшник",
-    "infosec", "information security", "offensive security",
-    "стажировка безопасность", "стажёр безопасность",
+    # Пентест
+    "пентест", "pentest", "penetration test", "тестирование на проникновение",
+    "анализ защищённости", "анализ защищенности",
+    # ИБ — все падежи через стем или частые формы
+    "информационной безопасност",   # genitive/prepositional stem
+    "информационная безопасност",   # nominative stem
+    "информационную безопасност",   # accusative stem
+    "по информационной",            # common fragment
+    "кибербезопасност",             # stem → кибербезопасность/и/ью
+    "защита информации", "защите информации", "защиты информации",
+    "аудит безопасности", "аудит информационной",
+    " иб ", " иб,", " иб.", "(иб)", "иб-специалист", "иб-аналитик",
+    "аналитик иб", "специалист иб", "инженер иб",
+    # English
+    "appsec", "application security", "security engineer", "security analyst",
+    "security researcher", "security specialist", "infosec", "information security",
+    "offensive security", "defensive security", "cybersecurity",
+    # SOC / SIEM / Threat
+    "soc аналитик", "soc-аналитик", "soc analyst", "siem",
+    "threat hunting", "threat intelligence", "threat analyst",
+    "киберугроз", "кибератак",
+    # Red/Blue team
+    "red team", "redteam", "blue team", "purple team",
+    # Прочее ИБ
+    "dfir", "bug bounty", "vulnerability", "cve",
+    "специалист по безопасности", "специалиста по безопасности",
+    "специалисту по безопасности", "специалистов по безопасности",
+    "инженер безопасности", "инженера безопасности",
+    "инженер по безопасности",
+    "ибшник", "ибшница",
+    "безопасност приложений",   # stem
+    "безопасность приложений",
+    "стажировка по безопасност",
+    "стажёр по безопасност", "стажер по безопасност",
+    "стажировка иб", "стажёр иб", "стажер иб",
 ]
 
 EXCLUDE_KEYWORDS = [
